@@ -1,32 +1,52 @@
+
 #include <string>
 #include <vector>
 #include <sstream>      // std::stringstream
 #include <fstream>
 #include <algorithm>    // std::remove_if
 #include <iomanip>
+
 #define _CRT_SECURE_NO_DEPRECATE
+
 #include <direct.h>  
 #include <stdio.h>  
 #include <stdlib.h>  
 #include <errno.h>  
+
 #include <cstring>
 #include <windows.h>
+
+
+
 #include <iostream>
-#include <bitset>
-#include <tuple>
 
 using namespace std;
 
-vector<int> BM;
-vector<int> PM;
-bool TLB = false;
-vector<int> TLBV;
-vector<int> LRU = { };
-vector<int> MYF = {};
+const string FIFO = "FIFO";
+const string SJF = "SJF";
+const string SRT = "SRT";
+const string MLF = "MLF";
+
+typedef struct process{
+	int arrivalTime;
+	int totalTime;
+	int timeLeft;
+	int time;
+
+	int index;
+
+} process;
+
+typedef struct myTime{
+	int time;
+	int placing;
+} myTime;
+
 
 bool invalidCharacter(char c){
 	return !(c >= 0 && c < 128);
 }
+
 vector<int> split(string input){
 	stringstream ss;
 	ss.str(input);
@@ -37,347 +57,274 @@ vector<int> split(string input){
 		result.push_back(stoi(item));
 	}
 	return result;
-} 
-void newPM(){
-	int frames = 1024;
-	int words = 512;
-	vector<int> NPM;
-	for (int i = 0; i < frames*words; i++){
-		if (i<words)
-			NPM.push_back(0);
-		else
-			NPM.push_back(-1);
+}
+vector<process> interpretProcess(vector<int> inVector){
+	vector<process> resultV;
+	
+	for (int i = 0; i < inVector.size() - 1; i+=2){
+		process p{ inVector[i], inVector[i + 1], inVector[i + 1], 0,0 };
+		resultV.push_back(p);
 	}
-	PM = NPM;
-}
-vector<int> newMask(){
-	int frames = 32;
-	vector<int> MASK;
-	MASK.push_back(1);
-	for (int i = 1; i <frames; i++)
-		MASK.push_back(MASK[i-1]<<1);
-	reverse(MASK.begin(), MASK.end());
-	return MASK;
-}
-vector<int> newMask2(){
-	int frames = 32;
-	vector<int> MASK2;
-	vector<int> MASK = newMask();
-	for (int i = 0; i <frames; i++)
-		MASK2.push_back(~MASK[i]);
-	return MASK2;
+	return resultV;
 }
 
-tuple<int,int> BMSearch(int val){
-	vector<int> MASK = newMask();
-	for (int i = 0; i < BM.size(); i++){
-		for (int j = 0; j < MASK.size(); j++){
-			int test = BM[i] & MASK[j];
-			if (test == 0){
-				if (val = 2){
-					int test2;
-					if (j  == MASK.size()-1 && i < BM.size() - 1) test2 = BM[i + 1] & MASK[0];
-					else if (j < MASK.size() - 1) test2 = BM[i] & MASK[j + 1];
-					else continue;
-					if (test == test2) return make_tuple(i, j);
-				}return make_tuple(i,j);
-			}
-		}
-	}
-	return make_tuple(-1, -1);
-}
+void doFIFO(int& curTime, int processCount, vector<process> processes, vector<process> &stableProcesses){
 
-vector<string> translateAddress(int VA){
-	string S,P,W;
-	string binary = bitset<32>(VA).to_string();
-	for (int i = 4; i < 13; i++) S = S + binary[i];
-	for (int i = 13; i < 23; i++) P = P + binary[i];
-	for (int i = 23; i < 32; i++) W = W + binary[i];
-	return vector<string>{S, P, W};
-}
-void miss(int SP, int S, int P){
-	if (TLBV.size() < 4){
-		TLBV.push_back(SP);
-		LRU.push_back(3);
-		MYF.push_back(PM[S] + P);
-	}
-	else{
-		for (int i = 0; i < TLBV.size(); i++){
-			if (LRU[i] == 0){
-				LRU[i] = 3;
-				TLBV[i] = SP;
-				MYF[i] = PM[S] + P;
-			}
+	while (!processes.empty()){
+		if (processes[0].arrivalTime <= curTime){
+			process cur = processes[0];
+			curTime += cur.totalTime;
+			int waitingTime = curTime - cur.arrivalTime;
+			//int t = waitingTime + processes[0].totalTime;
+			//times.push_back(t);
+			stableProcesses[cur.index].time = waitingTime;
+			processes.erase(processes.begin());
 		}
-	}
-	for (int i = 0; i < TLBV.size(); i++){
-		if (TLBV[i] != SP){
-			if (LRU[i] >0) LRU[i] --;
-		}
-	}
-}
-void readAddressTLB(int VA){
-	string SP;
-	string binary = bitset<32>(VA).to_string();
-	vector<string> address = translateAddress(VA);
-	int S = stoi(address[0], NULL, 2);
-	int P = stoi(address[1], NULL, 2);
-	int W = stoi(address[2], NULL, 2);
-	for (int i = 4; i < 23; i++) SP = SP + binary[i];
-	for (int i = 0; i <TLBV.size(); i++){
-		if ((TLBV[i] == stoi(SP, NULL, 2))){
-			for (int j = 0; j < TLBV.size(); j++){
-				if (TLBV[j] != stoi(SP, NULL, 2) && LRU[j]>0) LRU[j] --;
-				if (TLBV[j] == stoi(SP, NULL, 2)) LRU[j] = 3;
-			}
-			cout << "h " << PM[PM[S + P]] + W << " ";
-			return;
-		}
-	}cout << "m ";
-	if (PM[S] > 0){
-		if (PM[PM[S] + P] > 0){
-			cout << PM[PM[S] + P] + W << " ";//Physical address 
-			miss(stoi(SP,NULL,2),S,P);
-		}
-		else if (PM[PM[S] + P] == -1) cout << "pf" << " ";
-		else cout << "err" << " ";
-	}
-	else if (PM[S] == -1) cout << "pf" << " ";
-	else cout << "err" << " ";
-}
-void readAddress(int VA){
-	vector<string> address = translateAddress(VA);
-	int S = stoi(address[0], NULL, 2);
-	int P = stoi(address[1], NULL, 2);
-	int W = stoi(address[2], NULL, 2);
-	if (PM[S] > 0){
-		if (PM[PM[S] + P] > 0) cout << PM[PM[S] + P] + W << " ";//Physical address 
-		else if (PM[PM[S] + P] == -1) cout << "pf" << " ";
-		else cout << "err" << " ";
-	}
-	else if (PM[S] == -1) cout << "pf" << " ";
-	else cout << "err" << " ";
-}
-void writeBit(int index, int bitN, int bitVal){
-	if (bitVal == 1) BM[index] = BM[index] | newMask()[bitN];
-	else if (bitVal == 0) BM[index] = BM[index] | newMask2()[bitN];
-}
-
-void newBM(){
-	int frames = 32;
-	vector<int> NBM;
-	for (int i = 0; i < frames; i++)
-		NBM.push_back(0);
-	BM = NBM;
-	writeBit(0, 0, 1);
-}
-void writeAddressTLB(int VA){
-	string SP;
-	string binary = bitset<32>(VA).to_string();
-	vector<string> address = translateAddress(VA);
-	int S = stoi(address[0], NULL, 2);
-	int P = stoi(address[1], NULL, 2);
-	int W = stoi(address[2], NULL, 2);
-	for (int i = 4; i < 23; i++) SP = SP + binary[i];
-	for (int i = 0; i <TLBV.size(); i++){
-		if ((TLBV[i] == stoi(SP, NULL, 2))){
-			for (int j = 0; j < TLBV.size(); j++){
-				if (TLBV[j] != stoi(SP, NULL, 2) && LRU[j]>0) LRU[j] --;
-				if (TLBV[j] == stoi(SP, NULL, 2)) LRU[j] = 3;
-			}
-			cout << "h " << PM[PM[S+P]]+W<<" " ;
-			return;
-		}
-	}cout << "m ";
-	if (PM[S] == -1 ){
-		cout << "pf" << " ";
-		return;
-	}
-	if (PM[S] > 0){//Write to existing table
-		if (PM[PM[S] + P] > 0){
-			cout << PM[PM[S] + P] + W << " ";//Physical address 
-			miss(stoi(SP,NULL,2),S,P);
-		}
-		else if (PM[PM[S] + P] == -1) cout << "pf" << " ";
-		else{
-
-			tuple<int, int> IJPage = BMSearch(1);
-			if (get<0>(IJPage) != -1){
-				miss(stoi(SP, NULL, 2), S, P);
-				writeBit(get<0>(IJPage), get<1>(IJPage), 1);
-				PM[PM[S] + P] = (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512;
-				for (int i = PM[PM[S] + P]; i < (PM[PM[S] + P] + 512); i++) PM[i] = 0;
-				cout << PM[PM[S] + P] + W << " ";//Physical address 
-			}
-		}
-	}
-	else if (PM[S] == 0){
-		tuple<int, int> IJ = BMSearch(2);
-		if (get<0>(IJ) != -1){
-			miss(stoi(SP, NULL, 2), S, P);
-			writeBit(get<0>(IJ), get<1>(IJ), 1);
-			if (get<1>(IJ) +1 == newMask().size()) writeBit(get<0>(IJ) +1, 0, 1);
-			else writeBit(get<0>(IJ), get<1>(IJ)+1, 1);
-			PM[S] = (get<0>(IJ) * 32 + get<1>(IJ)) * 512;
-			for (int i = PM[S]; i < (PM[S] + 2 * 512); i++) PM[i] = 0;
-			tuple<int, int> IJPage = BMSearch(1);
-			if (get<0>(IJPage) != -1){
-				writeBit(get<0>(IJPage), get<1>(IJPage), 1);
-				PM[PM[S] + P] = (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512;
-				for (int i = PM[PM[S] + P]; i < (PM[PM[S] + P] + 512); i++) PM[i] = 0;
-				cout << PM[PM[S] + P] + W << " ";//Physical address 
-			}
-		}
-	}
-}
-void writeAddress(int VA){
-	vector<string> address = translateAddress(VA);
-	int S = stoi(address[0], NULL, 2);
-	int P = stoi(address[1], NULL, 2);
-	int W = stoi(address[2], NULL, 2);
-	if (PM[S] == -1 ){
-		cout << "pf" << " ";
-		return;
-	}
-	if (PM[S] > 0){//Write to existing table
-		if (PM[PM[S] + P] > 0) cout << PM[PM[S] + P] + W << " ";//Physical address 
-		else if (PM[PM[S] + P] == -1) cout << "pf" << " ";
-		else {
-			tuple<int, int> IJPage = BMSearch(1);
-			if (get<0>(IJPage) != -1){
-				writeBit(get<0>(IJPage), get<1>(IJPage), 1);
-				PM[PM[S] + P] = (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512;
-				for (int i = PM[PM[S] + P]; i < (PM[PM[S] + P] + 512); i++) PM[i] = 0;
-				cout << (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512 <<" ";//Physical address 
-			}
-		}
-	}
-	else if (PM[S] == 0){
-		tuple<int, int> IJ = BMSearch(2);
-		if (get<0>(IJ) != -1){
-			writeBit(get<0>(IJ), get<1>(IJ), 1);
-			if (get<1>(IJ) +1 == newMask().size()) writeBit(get<0>(IJ) +1, 0, 1);
-			else writeBit(get<0>(IJ), get<1>(IJ)+1, 1);
-			PM[S] = (get<0>(IJ) * 32 + get<1>(IJ)) * 512;
-			for (int i = PM[S]; i < (PM[S] + 2 * 512); i++) PM[i] = 0;
-			tuple<int, int> IJPage = BMSearch(1);
-			if (get<0>(IJPage) != -1){
-				writeBit(get<0>(IJPage), get<1>(IJPage), 1);
-				PM[PM[S] + P] = (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512;
-				for (int i = PM[PM[S] + P]; i < (PM[PM[S] + P] +  512); i++) PM[i] = 0;
-				cout << (get<0>(IJPage) * 32 + get<1>(IJPage)) * 512 << " ";//Physical address 
-			}
-		}
+		else curTime++;
 	}
 }
 
-void parse(vector< vector<int> > resultV){
-	newPM();
-	newBM();
-	//cout << resultV.size();
-	for (int i = 0; i < resultV[0].size() - 1; i += 2){
-		PM[resultV[0][i]] = resultV[0][i + 1];
-		if (resultV[0][i + 1] != -1){
-			for (int k = PM[resultV[0][i]] ; k < (PM[resultV[0][i]] + 2 * 512); k++) PM[k] = 0;
-			writeBit(resultV[0][i + 1] /512/ 32, resultV[0][i + 1] / 512 % 32, 1);
-			tuple<int, int> IJ = make_tuple(resultV[0][i + 1] / 512 / 32, resultV[0][i + 1] / 512 % 32);
-			if (get<1>(IJ) +1 == newMask().size()) writeBit(get<0>(IJ) +1, 0, 1);
-			else writeBit(get<0>(IJ), get<1>(IJ)+1, 1);
+void doSJF(int& curTime, int processCount, vector<process> processes,vector<process> &stableProcesses){
+	process * cur = nullptr;// &stableProcesses[0];
+	int curIndex = 0;
 
-		}
-	}
-	for (int i = 0; i < resultV[1].size() - 2; i += 3){
-		int P, S, F;
-		P = resultV[1][i];
-		S = resultV[1][i + 1];
-		if (PM[S] == 0){
-			PM[s] = resultV[0][i + 1];
-			if (resultV[0][i + 1] != -1){
-				for (int k = PM[resultV[0][i]]; k < (PM[resultV[0][i]] + 2 * 512); k++) PM[k] = 0;
-				writeBit(resultV[0][i + 1] / 512 / 32, resultV[0][i + 1] / 512 % 32, 1);
-				tuple<int, int> IJ = make_tuple(resultV[0][i + 1] / 512 / 32, resultV[0][i + 1] / 512 % 32);
-				if (get<1>(IJ) +1 == newMask().size()) writeBit(get<0>(IJ) +1, 0, 1);
-				else writeBit(get<0>(IJ), get<1>(IJ)+1, 1);
+	while (!processes.empty()){		
 
+		//process cur = processes[0];
+		//int cnt = 1;
+		/*while (cnt<processes.size()){
+			if (processes[cnt].arrivalTime == cur.arrivalTime){
+				if (processes[cnt].totalTime < cur.totalTime){
+					cur = processes[cnt];
+					curIndex = cnt; 
+				}
+				cnt++;
 			}
+			else break;
+		}*/
+		if (cur!=nullptr && cur->timeLeft == 0){
+			int waitingTime = curTime - cur->arrivalTime;
+			//int t = waitingTime + cur.totalTime;
+			stableProcesses[cur->index].time = waitingTime;
+			processes.erase(processes.begin() + curIndex);
+			cur = nullptr;
+		}
+		if (cur == nullptr){
+			for (int i = 0; i < processes.size(); i++){
+				if (processes[i].arrivalTime > curTime)
+					break;
+				if (cur == nullptr || processes[i].totalTime < cur->totalTime){
+					cur = &stableProcesses[processes[i].index];
+					curIndex = i;
+				}
+			}
+		}
+		curTime++;//= cur.totalTime;
 
+		if (cur != nullptr){
+			cur->timeLeft--;
 		}
-		F=	resultV[1][i + 2];
-		PM[PM[S] + P] = F;
-		if (F != -1){
-			for (int k = PM[PM[S] + P]; k < (PM[PM[S] + P] + 2 * 512); k++) PM[k] = 0;
-			writeBit(F / 512 / 32, F / 512 % 32, 1);
-			for (int k = PM[PM[S] + P]; k < (PM[PM[S] + P] + 2 * 512); k++) PM[k] = 0;
-		}
+		//times.push_back(myTime{t,find(originalProcesses,cur));
+
 	}
-	//for (int i = 0; i < 100;i++)
-	//	cout << PM[i];
-	for (int i = 0; i < resultV[2].size() - 1; i += 2){
-		//cout << "\n " << resultV[2][i] << " " << resultV[2][i + 1];
-		if (TLB){
-			if (resultV[2][i] == 0) readAddressTLB(resultV[2][i + 1]);
-			else writeAddressTLB(resultV[2][i + 1]);
+}
+void doSRT(int& curTime, int processCount, vector<process> processes, vector<process> &stableProcesses){
+	int curIndex = 0;
+	process * cur = &processes[0];
+	while (!processes.empty()){
+		for (int i = 0; i < processes.size(); i++){
+			if (processes[i].arrivalTime >curTime)
+				break;
+			if (processes[i].timeLeft < cur->timeLeft&&processes[i].arrivalTime == curTime){
+				cur = &processes[i];
+				curIndex = i;
+			}
+		}		
+		if (cur->timeLeft == 0){
+			int waitingTime = curTime - cur->arrivalTime;
+			stableProcesses[cur->index].time = waitingTime;
+			processes.erase(processes.begin() + curIndex);
+			if (processes.size() > 0){
+				cur = &processes[0];
+				curIndex = 0;
+				for (int i = 0; i < processes.size(); i++){
+					if (processes[i].arrivalTime >curTime)
+						break;
+					if (processes[i].timeLeft < cur->timeLeft){
+						cur = &processes[i];
+						curIndex = i ;
+					}
+				}
+			}
 		}
 		else {
-			if (resultV[2][i] == 0) readAddress(resultV[2][i + 1]);
-			else writeAddress(resultV[2][i + 1]);
+			cur->timeLeft = cur->timeLeft - 1;
+			curTime++;
 		}
-		
 	}
-
 }
+int layerLimit(int layer){
+	if (layer == 0)
+		return 1;
+	if (layer == 1)
+		return 2;
+	if (layer == 2)
+		return 4;
+	if (layer == 3)
+		return 16;
+	return -1;
+}
+void doMLF(int& curTime, int processCount, vector<process> processes, vector<process> &stableProcesses){
+	vector<process*> layer5;
+	vector<process*> layer4;
+	vector<process*> layer3;
+	vector<process*> layer2;
+	vector<process*> layer1;
+
+	vector< vector<process*>> layers;
+	layers.push_back(layer1);
+	layers.push_back(layer2);
+	layers.push_back(layer3);
+	layers.push_back(layer4);
+	layers.push_back(layer5);
+	int curIndex = -1;
+
+	process * cur =  nullptr;// &stableProcesses[0];
+	//layers[0].push_back(cur);
+	//cout << layers[0].empty();
+	int recentlyErased = 0;
+	while (!processes.empty() ||!layers[0].empty() || !layers[1].empty() || !layers[2].empty() || !layers[3].empty() || !layers[4].empty()){
+		//gfcout << "IN";
+		//if ((curIndex == -1) && (!processes.empty() || !layers[0].empty() || !layers[1].empty() || !layers[2].empty() || !layers[3].empty() || !layers[4].empty()))
+		//	curIndex = 0;
+		if (cur!=nullptr&&cur->timeLeft == 0){
+			//cout << "CUR TIME " << curTime<<"\n";
+			int waitingTime = curTime - cur->arrivalTime;
+			stableProcesses[cur->index].time = waitingTime;
+			layers[curIndex].erase(layers[curIndex].begin());
+			cur = nullptr;
+			//curIndex = -1;
+			recentlyErased = 1;
+		}
+		else {
+			if (cur!=nullptr&& curIndex <4 && cur->time >= layerLimit(curIndex)){//Finished with this layer
+				layers[curIndex].erase(layers[curIndex].begin());
+				layers[curIndex + 1].push_back(cur);
+				cur->time = 0;
+				cur = nullptr;
+				//curIndex = -1;
+			}
+			if (processes.size() > 0 && curTime >= processes[0].arrivalTime){//new process at this time
+				cur = &stableProcesses[processes[0].index];
+				processes.erase(processes.begin());
+				curIndex = 0;
+				layers[curIndex].push_back(cur);
+			}
+			else{
+				for (int i = 0; i < 5; i++){//get lowest process
+					if (!layers[i].empty()){
+						if (i == curIndex){
+							if (cur!=nullptr&&recentlyErased == 0&&curIndex==4){
+								layers[curIndex].erase(layers[curIndex].begin());
+								layers[curIndex].push_back(cur);
+							}
+						}
+						cur = layers[i][0];
+						curIndex = i;
+						break;
+					}
+				}
+			}
+			if (cur != nullptr){
+				cur->timeLeft = cur->timeLeft - 1;
+				cur->time++;
+			}
+			curTime++;
+			//recentlyErased = 0;
+		}
+	}
+}
+
+void scheduler(vector<process> processes, string kind){
+	int curTime = processes[0].arrivalTime;
+	int processCount = processes.size();
+	//vector<int> times;
+
+	if (kind.compare(FIFO) == 0)
+		doFIFO(curTime, processCount, processes, processes);
+	else if (kind.compare(SJF) == 0)
+		doSJF(curTime, processCount, processes, processes);
+	else if (kind.compare(SRT) == 0)
+		doSRT(curTime, processCount, processes, processes);
+	else if (kind.compare(MLF) == 0)
+		doMLF(curTime, processCount, processes, processes);
+
+	float sum = 0;
+	for (int i = 0; i < processes.size(); i++)
+		sum += processes[i].time;
+	float average = sum / processCount;
+	cout << fixed;
+	cout << setprecision(2);
+	cout << average << " ";
+	for (int i = 0; i < processes.size(); i++)
+		cout << processes[i].time << " ";
+	cout << "\n";
+}
+
+bool compareByArrival(const process &a, const process &b){
+	return a.arrivalTime < b.arrivalTime;
+}
+void parse(vector<int> resultV){
+	if (resultV.size() < 2) return;
+	vector<process> processes = interpretProcess(resultV);
+	stable_sort(processes.begin(), processes.end(), compareByArrival);
+	for (int i = 0; i < processes.size(); i++){
+		processes[i].index = i;
+		//cout << processes[i].arrivalTime << " " << processes[i].totalTime <<  " " << processes[i].index << "\n";
+	}
+	scheduler(processes, FIFO);
+	scheduler(processes, SJF);
+	scheduler(processes, SRT);
+	scheduler(processes, MLF);
+}
+
 
 int main(){
+	string fileName = "input.txt";
+	string outFileName = "78552559.txt";
 	cout << "ENTER FILE PATH\n$ ";
 	string newDir;// = R"(C:\path\to\directory\)"
-	string fileName = "wide1.txt";
-	string fileName2 = "wide2.txt";
-	string outFileName = "785525591.txt";
-	string outFileName2 = "785525592.txt";
 	getline(cin, newDir);
 	char buf[4096]; // never know how much is needed
-	string s = newDir  + fileName;
+	string s = newDir + fileName;
 	string s2 = newDir + outFileName;
-	string s3 = newDir + fileName2;
-	string s4 = newDir + outFileName2;
 
 	ofstream ofin(s2);
-	ofstream ofin2(s4);
-
 	streambuf *coutbuf = cout.rdbuf(); //save old buf
 	cout.rdbuf(ofin.rdbuf()); //redirect std::cout to out.txt!
 
 	ifstream input(s);
-	ifstream input2(s3);
-
 	if (!input)
-		cout << "\n input file 1 not opened successfully \"" << s << "\"";
-	if (!input2)
-		cout << "\n input file 2 not opened successfully \"" << s << "\"";
+		cout << "\n input file not opened successfully \""<<s<<"\"";
 	if (!ofin)
-	cout << "\n output file not opened successfully";
+		cout << "\n output file not opened successfully";
+
 	if (!input){
 		cerr << "File could not be opened: " << s << endl;
 		return 0;
 	}
+
 	string line;
-	vector<vector<int>> inputV;
-	while (getline(input, line))
-		inputV.push_back(split(line));
-	while (getline(input2, line))
-		inputV.push_back(split(line));
-	//cout << inputV.size();
-	parse(inputV);
-	TLB = true;
-	cout << "\n";
-	std::cout.rdbuf(coutbuf); //reset to standard output again
-	//streambuf *coutbuf = cout.rdbuf(); //save old buf
-	cout.rdbuf(ofin2.rdbuf()); //redirect std::cout to out.txt!
 
-	parse(inputV);
+	while (getline(input, line)){
+		vector<int> resultV = split(line);
+		parse(resultV);
+	}
 	cout << "\n";
-
+	
 	std::cout.rdbuf(coutbuf); //reset to standard output again
 	cout << "Outut to " << s2 << " \n";
 
+
+	return 0;
 }
